@@ -1,0 +1,221 @@
+# ICESat-2 Profile Viewer — custom style file
+# -----------------------------------------------
+# One or more styles can be defined in this file.
+# Each style block starts with its name in square brackets, e.g. [My Style].
+# Lines beginning with # are comments and are ignored by the parser.
+# Blank lines are ignored too. Use them freely for readability.
+#
+# HOW TO USE
+# ----------
+# 1. Fill in (or copy) a style block below.
+# 2. Save the file anywhere on your machine.
+# 3. In the Profile Viewer, open the "Plot style" group and click
+#    "Load styles from file…", then select this file.
+# 4. Your styles will appear in the Style drop-down alongside the built-ins.
+#    Loaded styles persist for the current QGIS session; reload the file
+#    after restarting QGIS.
+#
+# COLOUR VALUES
+# -------------
+# Any format matplotlib accepts is valid:
+#   Hex string   #rrggbb  or  #rrggbbaa
+#   Named colour  white  black  red  steelblue  …
+#   "none"        fully transparent (useful for ax_facecolor overlays)
+#
+# NUMERIC VALUES
+# --------------
+# grid_alpha and water_fill_alpha must be between 0.0 and 1.0.
+# Font sizes are in points (integers or decimals).
+#
+# OPTIONAL SECTIONS
+# -----------------
+# [My Style.conf_colors]   — override the confidence colour map
+# [My Style.overlay_palette] — override the overlay line colours
+# [My Style.rcparams]      — pass extra matplotlib rcParam overrides
+# These sections must use the parent style's exact name followed by
+# the section suffix.  Omitting them leaves the defaults in place.
+#
+# -----------------------------------------------------------------------
+# REQUIRED KEYS (every style block must contain all of these)
+# -----------------------------------------------------------------------
+#
+#   fig_facecolor       Colour of the figure canvas outside the axes.
+#   ax_facecolor        Colour of the plot area background.
+#   text_color          Tick labels and axis labels.
+#   title_color         Plot title text.
+#   spine_color         Colour of the bottom and left axis borders.
+#   grid_color          Grid line colour.
+#   grid_alpha          Grid opacity  (0.0 = invisible, 1.0 = solid).
+#   grid_linestyle      Grid line pattern: -  --  :  -.
+#   tick_labelsize      Tick label size in points.
+#   label_fontsize      Axis label size in points.
+#   title_fontsize      Title size in points.
+#   legend_facecolor    Legend box background colour.
+#   legend_edgecolor    Legend box border colour.
+#   legend_labelcolor   Legend item text colour.
+#   legend_framealpha   Legend box opacity  (0.0–1.0).
+#   water_fill          Fill colour for water-region bands.
+#   water_fill_alpha    Opacity of water-region bands  (0.0–1.0).
+#   water_edge          Edge colour of water-point diamond markers.
+#   font_family         Matplotlib font family: serif  sans-serif  monospace
+#                       Use "none" to keep matplotlib's current default.
+#
+# -----------------------------------------------------------------------
+
+
+# =======================================================================
+# EXAMPLE 1 — a clean style suitable for academic papers
+# =======================================================================
+
+[Academic paper (custom)]
+
+fig_facecolor       = white
+ax_facecolor        = white
+
+text_color          = black
+title_color         = black
+spine_color         = black
+
+grid_color          = black
+grid_alpha          = 0.15
+grid_linestyle      = :
+
+tick_labelsize      = 9
+label_fontsize      = 10
+title_fontsize      = 11
+
+legend_facecolor    = white
+legend_edgecolor    = black
+legend_labelcolor   = black
+legend_framealpha   = 1.0
+
+water_fill          = #4393c3
+water_fill_alpha    = 0.20
+water_edge          = #2166ac
+
+font_family         = serif
+
+# Inward ticks + minor ticks are common in geophysical journals
+[Academic paper (custom).rcparams]
+font.family         = serif
+axes.linewidth      = 0.8
+xtick.direction     = in
+ytick.direction     = in
+xtick.major.width   = 0.8
+ytick.major.width   = 0.8
+xtick.minor.visible = true
+ytick.minor.visible = true
+xtick.minor.width   = 0.6
+ytick.minor.width   = 0.6
+
+# Colourblind-friendly sequential palette (orange–red)
+[Academic paper (custom).conf_colors]
+-1 = #bdbdbd
+ 0 = #d9d9d9
+ 1 = #fdcc8a
+ 2 = #fc8d59
+ 3 = #e34a33
+ 4 = #b30000
+
+# Greyscale-distinguishable overlay colours
+[Academic paper (custom).overlay_palette]
+#1b7837
+#762a83
+#c51b7d
+#d6604d
+#4393c3
+#878787
+
+
+# =======================================================================
+# EXAMPLE 2 — dark theme matching the built-in default
+# =======================================================================
+
+[Dark (custom)]
+
+fig_facecolor       = #12121f
+ax_facecolor        = #1a1a2e
+
+text_color          = #cccccc
+title_color         = #ffffff
+spine_color         = #555555
+
+grid_color          = #555555
+grid_alpha          = 0.35
+grid_linestyle      = --
+
+tick_labelsize      = 8
+label_fontsize      = 9
+title_fontsize      = 10
+
+legend_facecolor    = #1e1e3a
+legend_edgecolor    = #444444
+legend_labelcolor   = #dddddd
+legend_framealpha   = 0.65
+
+water_fill          = #1a6fa8
+water_fill_alpha    = 0.18
+water_edge          = #7ecfff
+
+font_family         = none
+
+# No rcparams overrides needed for this style
+[Dark (custom).rcparams]
+
+# No conf_color overrides — uses built-in defaults
+# No overlay_palette overrides — uses built-in defaults
+
+
+# =======================================================================
+# TEMPLATE — copy this block and fill in your own values
+# =======================================================================
+
+[My Custom Style]
+
+fig_facecolor       = white
+ax_facecolor        = white
+
+text_color          = black
+title_color         = black
+spine_color         = black
+
+grid_color          = black
+grid_alpha          = 0.2
+grid_linestyle      = --
+
+tick_labelsize      = 9
+label_fontsize      = 10
+title_fontsize      = 11
+
+legend_facecolor    = white
+legend_edgecolor    = black
+legend_labelcolor   = black
+legend_framealpha   = 1.0
+
+water_fill          = #4393c3
+water_fill_alpha    = 0.20
+water_edge          = #2166ac
+
+font_family         = sans-serif
+
+# Optional: extra matplotlib rcParam overrides
+[My Custom Style.rcparams]
+# font.family       = sans-serif
+# axes.linewidth    = 0.8
+# xtick.direction   = in
+# ytick.direction   = in
+
+# Optional: confidence colour overrides (keys: -1, 0, 1, 2, 3, 4)
+[My Custom Style.conf_colors]
+# -1 = #bdbdbd
+#  0 = #d9d9d9
+#  1 = #fdcc8a
+#  2 = #fc8d59
+#  3 = #e34a33
+#  4 = #b30000
+
+# Optional: overlay line colour palette (one hex colour per line)
+[My Custom Style.overlay_palette]
+# #1b7837
+# #762a83
+# #c51b7d

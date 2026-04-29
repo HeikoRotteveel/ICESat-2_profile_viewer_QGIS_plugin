@@ -11,15 +11,18 @@ Fallback: QGIS feature iterator when the layer is not a plain file on disk.
 Thanks to the great documentation provided by QGIS:
 https://docs.qgis.org/3.44/en/docs/pyqgis_developer_cookbook/plugins/index.html
 
-Author: H.B. Rotteveel
-Date: 28/03/2026
-"""
+Style definitions live in plot_styles.py.  Add or edit styles there
+without touching this file.
 
+Author: H.B. Rotteveel
+Date: 29/04/2026
+"""
 import os
 import numpy as np
 
 try:
     import geopandas as gpd
+
     GEOPANDAS_AVAILABLE = True
 except ImportError:
     GEOPANDAS_AVAILABLE = False
@@ -28,12 +31,13 @@ from qgis.PyQt.QtWidgets import (
     QDockWidget, QWidget, QVBoxLayout, QHBoxLayout,
     QPushButton, QLabel, QComboBox, QCheckBox,
     QGroupBox, QSizePolicy, QSpinBox,
-    QScrollArea, QToolButton
+    QScrollArea, QToolButton, QFileDialog, QMessageBox
 )
 from qgis.PyQt.QtCore import Qt
 from qgis.core import QgsProject, QgsFeatureRequest
 
 import matplotlib
+
 matplotlib.use("Qt5Agg")
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.backends.backend_qt5agg import NavigationToolbar2QT as NavigationToolbar
@@ -41,7 +45,35 @@ from matplotlib.figure import Figure
 import matplotlib.lines as mlines
 import matplotlib.patches as mpatches
 
+from .plot_styles import (
+    PLOT_STYLES, CONF_COLORS, CONF_LABELS, OVERLAY_PALETTE,
+    load_styles_from_file
+)
 
+# Field auto-detection
+
+CONFIDENCE_CANDIDATES = [
+    "confidence", "conf", "signal_conf_ph", "signal_conf_land",
+    "signal_confidence", "quality_ph", "quality"
+]
+HEIGHT_CANDIDATES = [
+    "height", "h", "z", "elevation", "elev", "h_ph",
+    "h_te_best_fit", "h_li", "h_mean", "h_canopy"
+]
+LAT_CANDIDATES = ["lat", "latitude", "y", "lat_ph"]
+LON_CANDIDATES = ["lon", "longitude", "x", "lon_ph"]
+WATER_CANDIDATES = [
+    "water", "water_body", "is_water", "inland_water",
+    "water_flag", "segment_watermask", "lake_flag"
+]
+
+
+def _find_field(fields, candidates):
+    names = {f.name().lower(): f.name() for f in fields}
+    for c in candidates:
+        if c.lower() in names:
+            return names[c.lower()]
+    return None
 
 # Vectorised geodesic distance
 def cumulative_distance(lats, lons):
@@ -55,56 +87,6 @@ def cumulative_distance(lats, lons):
          + np.cos(lat[:-1]) * np.cos(lat[1:]) * np.sin(dlon / 2) ** 2)
     d = 2 * R * np.arcsin(np.sqrt(np.clip(a, 0, 1)))
     return np.concatenate(([0.0], np.cumsum(d)))
-
-
-# Colour maps
-
-CONF_COLORS = {
-    -1: "#9e9e9e",
-     0: "#e0e0e0",
-     1: "#ffeb3b",
-     2: "#ff9800",
-     3: "#4caf50",
-     4: "#00bcd4",
-}
-CONF_LABELS = {
-    -1: "-1  invalid",
-     0:  "0  noise",
-     1:  "1  low",
-     2:  "2  medium",
-     3:  "3  high",
-     4:  "4  very high",
-}
-OVERLAY_PALETTE = [
-    "#ff6b6b", "#ffd93d", "#6bcb77", "#4d96ff",
-    "#f08cff", "#ff9f43", "#48dbfb", "#ff9ff3",
-]
-
-
-
-# Field auto-detection
-def _find_field(fields, candidates):
-    names = {f.name().lower(): f.name() for f in fields}
-    for c in candidates:
-        if c.lower() in names:
-            return names[c.lower()]
-    return None
-
-
-CONFIDENCE_CANDIDATES = [
-    "confidence", "conf", "signal_conf_ph", "signal_conf_land",
-    "signal_confidence", "quality_ph", "quality"
-]
-HEIGHT_CANDIDATES = [
-    "height", "h", "z", "elevation", "elev", "h_ph",
-    "h_te_best_fit", "h_li", "h_mean", "h_canopy"
-]
-LAT_CANDIDATES   = ["lat", "latitude", "y", "lat_ph"]
-LON_CANDIDATES   = ["lon", "longitude", "x", "lon_ph"]
-WATER_CANDIDATES = [
-    "water", "water_body", "is_water", "inland_water",
-    "water_flag", "segment_watermask", "lake_flag"
-]
 
 
 
@@ -143,7 +125,6 @@ def load_arrays(layer, columns, selected_fids=None):
     Returns (data_dict, error_string_or_None).
     """
     path = _parquet_path(layer)
-
     if path is not None:
         return _geopandas_load(path, layer, columns, selected_fids)
     else:
@@ -153,22 +134,15 @@ def load_arrays(layer, columns, selected_fids=None):
 def _geopandas_load(path, layer, columns, selected_fids):
     """Read via geopandas — fast columnar path."""
     try:
-        # Read only the columns we need (geopandas passes this to the
-        # underlying engine, so unneeded columns are never decompressed)
-        # geometry column is always read by geopandas but we just ignore it
         gdf = gpd.read_file(path, columns=columns, engine="pyogr")
     except Exception:
-        # engine="pyogr" may not be available in all QGIS builds;
-        # fall back to the default engine
         try:
             gdf = gpd.read_file(path, columns=columns)
-        except Exception as e:
+        except Exception:
             return _qgis_fallback(layer, columns, selected_fids)
 
-    # Filter to selected rows if needed
     if selected_fids:
-        fid_offset  = _detect_fid_offset(layer)
-        # QGIS FIDs map directly to DataFrame row positions
+        fid_offset = _detect_fid_offset(layer)
         row_indices = np.asarray(sorted(selected_fids), dtype=np.int64) - fid_offset
         n = len(gdf)
         row_indices = row_indices[(row_indices >= 0) & (row_indices < n)]
@@ -176,7 +150,6 @@ def _geopandas_load(path, layer, columns, selected_fids):
             return None, "Selection produced no valid row indices."
         gdf = gdf.iloc[row_indices]
 
-    # Check all requested columns exist
     missing = [c for c in columns if c not in gdf.columns]
     if missing:
         return None, f"Columns not found: {missing}"
@@ -249,7 +222,6 @@ class OverlayFieldRow(QWidget):
         return self.enabled_cb.isChecked()
 
 
-
 # Main dock widget
 class ProfileDockWidget(QDockWidget):
     def __init__(self, iface):
@@ -258,6 +230,10 @@ class ProfileDockWidget(QDockWidget):
         self.setMinimumWidth(540)
         self.setObjectName("ICESat2ProfileDock")
         self._overlay_rows = []
+
+        # Working copy of styles — starts with built-ins, grows when the user
+        # loads a file.  We never mutate the imported PLOT_STYLES constant.
+        self._styles = dict(PLOT_STYLES)
 
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
@@ -311,10 +287,10 @@ class ProfileDockWidget(QDockWidget):
             src_lay.addLayout(row)
             return combo
 
-        self.lat_combo   = field_row("Latitude field:")
-        self.lon_combo   = field_row("Longitude field:")
-        self.h_combo     = field_row("Height field:")
-        self.conf_combo  = field_row("Confidence field:")
+        self.lat_combo = field_row("Latitude field:")
+        self.lon_combo = field_row("Longitude field:")
+        self.h_combo = field_row("Height field:")
+        self.conf_combo = field_row("Confidence field:")
         self.water_combo = field_row("Water flag field:")
 
         self.layer_combo.currentIndexChanged.connect(self._on_layer_changed)
@@ -347,6 +323,38 @@ class ProfileDockWidget(QDockWidget):
 
         outer.addWidget(ov_box)
 
+        # Plot style
+        style_box = QGroupBox("Plot style")
+        style_lay = QVBoxLayout(style_box)
+        style_lay.setSpacing(4)
+
+        # Row 1: style selector
+        row_style = QHBoxLayout()
+        row_style.addWidget(QLabel("Style:"))
+        self.style_combo = QComboBox()
+        self.style_combo.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        self._repopulate_style_combo()
+        row_style.addWidget(self.style_combo)
+        style_lay.addLayout(row_style)
+
+        # Row 2: load-from-file button + loaded-file label
+        row_file = QHBoxLayout()
+        load_btn = QPushButton("📂  Load styles from file…")
+        load_btn.setToolTip(
+            "Load additional styles from a .txt file.\n"
+            "See style_template.txt for the required format."
+        )
+        load_btn.clicked.connect(self._load_styles_from_file)
+        row_file.addWidget(load_btn)
+
+        self.loaded_file_lbl = QLabel("")
+        self.loaded_file_lbl.setStyleSheet("color: #888; font-size: 8pt;")
+        self.loaded_file_lbl.setWordWrap(True)
+        row_file.addWidget(self.loaded_file_lbl, stretch=1)
+        style_lay.addLayout(row_file)
+
+        outer.addWidget(style_box)
+
         # Display options
         disp_box = QGroupBox("Display options")
         disp_lay = QHBoxLayout(disp_box)
@@ -371,7 +379,9 @@ class ProfileDockWidget(QDockWidget):
         # Plot button & status
         self.plot_btn = QPushButton("▶  Plot profile")
         self.plot_btn.setFixedHeight(34)
-        f = self.plot_btn.font(); f.setBold(True); self.plot_btn.setFont(f)
+        f = self.plot_btn.font();
+        f.setBold(True);
+        self.plot_btn.setFont(f)
         self.plot_btn.clicked.connect(self.plot_profile)
         outer.addWidget(self.plot_btn)
 
@@ -394,7 +404,65 @@ class ProfileDockWidget(QDockWidget):
         QgsProject.instance().layersAdded.connect(self._populate_layers)
         QgsProject.instance().layersRemoved.connect(self._populate_layers)
 
-    #  Layer helpers
+    # Style combo helpers
+
+    def _repopulate_style_combo(self, keep_selection=None):
+        """Rebuild the style drop-down from self._styles, preserving selection."""
+        prev = keep_selection or self.style_combo.currentData()
+        self.style_combo.blockSignals(True)
+        self.style_combo.clear()
+        for name in self._styles:
+            self.style_combo.addItem(name, name)
+        # Restore previous selection, or fall back to "Academic paper"
+        idx = self.style_combo.findData(prev)
+        if idx < 0:
+            idx = self.style_combo.findData("Academic paper")
+        if idx >= 0:
+            self.style_combo.setCurrentIndex(idx)
+        self.style_combo.blockSignals(False)
+
+    def _load_styles_from_file(self):
+        """Open a file dialog, parse the chosen style file, merge into self._styles."""
+        path, _ = QFileDialog.getOpenFileName(
+            self, "Load style file", "",
+            "Style files (*.txt);;All files (*)"
+        )
+        if not path:
+            return  # user cancelled
+
+        try:
+            loaded = load_styles_from_file(path)
+        except (ValueError, OSError) as exc:
+            QMessageBox.critical(
+                self, "Style file error",
+                f"Could not load styles from:\n{path}\n\n{exc}"
+            )
+            return
+
+        if not loaded:
+            QMessageBox.warning(
+                self, "No styles found",
+                f"The file contained no valid style blocks:\n{path}"
+            )
+            return
+
+        prev_selection = self.style_combo.currentData()
+        self._styles.update(loaded)
+        self._repopulate_style_combo(keep_selection=prev_selection)
+
+        names = ", ".join(loaded.keys())
+        self.loaded_file_lbl.setText(f"Loaded: {names}")
+        self._status(
+            f"✔  {len(loaded)} style(s) loaded from {os.path.basename(path)}"
+        )
+
+    def _current_style(self):
+        """Return the active style dict from self._styles."""
+        name = self.style_combo.currentData()
+        return self._styles.get(name, self._styles["Default (dark)"])
+
+    # Layer helpers
+
     def _populate_layers(self):
         prev = self.layer_combo.currentData()
         self.layer_combo.blockSignals(True)
@@ -425,10 +493,10 @@ class ProfileDockWidget(QDockWidget):
                 if i >= 0:
                     combo.setCurrentIndex(i)
 
-        populate(self.lat_combo,   LAT_CANDIDATES)
-        populate(self.lon_combo,   LON_CANDIDATES)
-        populate(self.h_combo,     HEIGHT_CANDIDATES)
-        populate(self.conf_combo,  CONFIDENCE_CANDIDATES)
+        populate(self.lat_combo, LAT_CANDIDATES)
+        populate(self.lon_combo, LON_CANDIDATES)
+        populate(self.h_combo, HEIGHT_CANDIDATES)
+        populate(self.conf_combo, CONFIDENCE_CANDIDATES)
         populate(self.water_combo, WATER_CANDIDATES)
 
         field_names = [f.name() for f in fields]
@@ -473,10 +541,10 @@ class ProfileDockWidget(QDockWidget):
             self._status("⚠ No layer selected.", error=True)
             return
 
-        lat_f   = self.lat_combo.currentData()
-        lon_f   = self.lon_combo.currentData()
-        h_f     = self.h_combo.currentData()
-        conf_f  = self.conf_combo.currentData()
+        lat_f = self.lat_combo.currentData()
+        lon_f = self.lon_combo.currentData()
+        h_f = self.h_combo.currentData()
+        conf_f = self.conf_combo.currentData()
         water_f = self.water_combo.currentData()
 
         if not lat_f or not lon_f or not h_f:
@@ -488,10 +556,9 @@ class ProfileDockWidget(QDockWidget):
             if r.is_enabled() and r.field_name()
         ]
 
-        # Deduplicated column list
         columns = list(dict.fromkeys(
             [lat_f, lon_f, h_f]
-            + ([conf_f]  if conf_f  else [])
+            + ([conf_f] if conf_f else [])
             + ([water_f] if water_f else [])
             + overlay_fields
         ))
@@ -515,158 +582,191 @@ class ProfileDockWidget(QDockWidget):
             self._status(f"⚠ {err}", error=True)
             return
 
-        # Coerce arrays
         def to_float(arr):
             try:
                 return arr.astype(np.float64)
             except (ValueError, TypeError):
                 return np.full(len(arr), np.nan)
 
-        lats    = to_float(data[lat_f])
-        lons    = to_float(data[lon_f])
+        lats = to_float(data[lat_f])
+        lons = to_float(data[lon_f])
         heights = to_float(data[h_f])
-        confs   = data[conf_f].astype(np.int8) if conf_f  else np.zeros(len(lats), np.int8)
-        waters  = data[water_f].astype(bool)   if water_f else np.zeros(len(lats), bool)
+        confs = data[conf_f].astype(np.int8) if conf_f else np.zeros(len(lats), np.int8)
+        waters = data[water_f].astype(bool) if water_f else np.zeros(len(lats), bool)
 
-        # Drop rows where core fields are NaN
-        valid   = np.isfinite(lats) & np.isfinite(lons) & np.isfinite(heights)
-        lats    = lats[valid];    lons    = lons[valid]
-        heights = heights[valid]; confs   = confs[valid]; waters = waters[valid]
+        valid = np.isfinite(lats) & np.isfinite(lons) & np.isfinite(heights)
+        lats = lats[valid];
+        lons = lons[valid]
+        heights = heights[valid];
+        confs = confs[valid];
+        waters = waters[valid]
         ov_data = {of: to_float(data[of])[valid] for of in overlay_fields}
 
         if len(lats) == 0:
             self._status("⚠ No valid points after filtering.", error=True)
             return
 
-        # Sort along-track by latitude
-        order   = np.argsort(lats)
-        lats    = lats[order];    lons    = lons[order]
-        heights = heights[order]; confs   = confs[order]; waters = waters[order]
+        order = np.argsort(lats)
+        lats = lats[order];
+        lons = lons[order]
+        heights = heights[order];
+        confs = confs[order];
+        waters = waters[order]
         ov_data = {of: v[order] for of, v in ov_data.items()}
 
         dist_m = cumulative_distance(lats, lons)
-        n_ov   = len(overlay_fields)
+        n_ov = len(overlay_fields)
 
-        # Figure layout
-        right = max(0.78 - (n_ov - 1) * 0.09, 0.50) if n_ov > 0 else 0.93
-        self.figure.clear()
-        self.figure.subplots_adjust(left=0.09, right=right, top=0.91, bottom=0.10)
-        ax = self.figure.add_subplot(111)
-        self._style_ax(ax)
+        # Resolve active style
+        st = self._current_style()
+        conf_colors = st.get("conf_colors", CONF_COLORS)
+        ov_palette = st.get("overlay_palette", OVERLAY_PALETTE)
 
-        pt_size = self.pt_size_spin.value()
+        # Draw (rcParams overridden for this draw only)
+        with matplotlib.rc_context(st.get("rcparams", {})):
+            right = max(0.78 - (n_ov - 1) * 0.09, 0.50) if n_ov > 0 else 0.93
+            self.figure.clear()
+            self.figure.patch.set_facecolor(st["fig_facecolor"])
+            self.figure.subplots_adjust(left=0.09, right=right, top=0.91, bottom=0.10)
+            ax = self.figure.add_subplot(111)
+            self._style_ax(ax, st)
 
-        # Water region shading
-        if self.show_water_cb.isChecked() and water_f and waters.any():
-            padded = np.concatenate([[False], waters, [False]])
-            starts = np.where(np.diff(padded.astype(np.int8)) ==  1)[0]
-            ends   = np.where(np.diff(padded.astype(np.int8)) == -1)[0] - 1
-            for s, e in zip(starts, ends):
-                ax.axvspan(dist_m[s], dist_m[e],
-                           color="#1a6fa8", alpha=0.18, zorder=1, linewidth=0)
+            pt_size = self.pt_size_spin.value()
 
-        # Elevation scatter coloured by confidence
-        legend_handles = []
-        legend_labels  = []
-
-        for cv in sorted(set(confs.tolist())):
-            color = CONF_COLORS.get(cv, "#ffffff")
-            label = CONF_LABELS.get(cv, str(cv))
-            mask  = confs == cv
-            sc = ax.scatter(
-                dist_m[mask], heights[mask],
-                c=color, s=pt_size ** 1.6,
-                marker="o", edgecolors="none", linewidths=0, zorder=3
-            )
-            legend_handles.append(sc)
-            legend_labels.append(label)
-
-        # Water point markers
-        if self.show_water_cb.isChecked() and water_f and waters.any():
-            ax.scatter(
-                dist_m[waters], heights[waters],
-                c="none", s=(pt_size * 1.7) ** 1.6,
-                marker="D", edgecolors="#7ecfff",
-                linewidths=0.9, zorder=5
-            )
-            wh = mlines.Line2D(
-                [], [], color="#7ecfff", marker="D",
-                markerfacecolor="none", markeredgewidth=0.9,
-                linestyle="None", markersize=6
-            )
-            legend_handles.append(wh)
-            legend_labels.append("water point")
-
-        ax.set_xlabel("Along-track distance (m)", fontsize=9, color="#cccccc")
-        ax.set_ylabel("Height (m)",               fontsize=9, color="#cccccc")
-        ax.set_title(
-            f"ICESat-2 Elevation Profile  —  {len(lats):,} points  |  "
-            f"{dist_m[-1]/1000:.2f} km",
-            fontsize=10, fontweight="bold", color="#ffffff", pad=8
-        )
-
-        # Overlay lines
-        for idx_ov, of in enumerate(overlay_fields):
-            color = OVERLAY_PALETTE[idx_ov % len(OVERLAY_PALETTE)]
-            vals  = ov_data[of]
-            valid_ov = ~np.isnan(vals)
-
-            tax = ax.twinx()
-            self._style_twin_ax(tax, color)
-
-            if idx_ov > 0:
-                tax.spines["right"].set_position(("axes", 1.0 + idx_ov * 0.10))
-                tax.spines["right"].set_visible(True)
-
-            tax.plot(dist_m[valid_ov], vals[valid_ov],
-                     color=color, linewidth=1.4, alpha=0.85, zorder=6)
-            tax.set_ylabel(of, fontsize=8, color=color, labelpad=4)
-            tax.tick_params(axis="y", colors=color, labelsize=8)
-
-            lh = mlines.Line2D([], [], color=color, linewidth=1.8)
-            legend_handles.append(lh)
-            legend_labels.append(of)
-
-        # Legend
-        if self.show_legend_cb.isChecked() and legend_handles:
+            # Water region shading
             if self.show_water_cb.isChecked() and water_f and waters.any():
-                rh = mpatches.Patch(facecolor="#1a6fa8", alpha=0.40, edgecolor="none")
-                legend_handles.append(rh)
-                legend_labels.append("water region")
+                padded = np.concatenate([[False], waters, [False]])
+                starts = np.where(np.diff(padded.astype(np.int8)) == 1)[0]
+                ends = np.where(np.diff(padded.astype(np.int8)) == -1)[0] - 1
+                for s, e in zip(starts, ends):
+                    ax.axvspan(dist_m[s], dist_m[e],
+                               color=st["water_fill"],
+                               alpha=st["water_fill_alpha"],
+                               zorder=1, linewidth=0)
 
-            leg = ax.legend(
-                legend_handles, legend_labels,
-                title="Legend", title_fontsize=8,
-                fontsize=8, loc="upper left",
-                framealpha=0.65, facecolor="#1e1e3a",
-                edgecolor="#444", labelcolor="#dddddd"
+            # Elevation scatter coloured by confidence
+            legend_handles = []
+            legend_labels = []
+
+            for cv in sorted(set(confs.tolist())):
+                color = conf_colors.get(cv, "#ffffff")
+                label = CONF_LABELS.get(cv, str(cv))
+                mask = confs == cv
+                sc = ax.scatter(
+                    dist_m[mask], heights[mask],
+                    c=color, s=pt_size ** 1.6,
+                    marker="o", edgecolors="none", linewidths=0, zorder=3
+                )
+                legend_handles.append(sc)
+                legend_labels.append(label)
+
+            # Water point markers
+            if self.show_water_cb.isChecked() and water_f and waters.any():
+                ax.scatter(
+                    dist_m[waters], heights[waters],
+                    c="none", s=(pt_size * 1.7) ** 1.6,
+                    marker="D", edgecolors=st["water_edge"],
+                    linewidths=0.9, zorder=5
+                )
+                wh = mlines.Line2D(
+                    [], [], color=st["water_edge"], marker="D",
+                    markerfacecolor="none", markeredgewidth=0.9,
+                    linestyle="None", markersize=6
+                )
+                legend_handles.append(wh)
+                legend_labels.append("water point")
+
+            ax.set_xlabel(
+                "Along-track distance (m)",
+                fontsize=st["label_fontsize"], color=st["text_color"]
             )
-            leg.get_title().set_color("#aaaaaa")
+            ax.set_ylabel(
+                "Height (m)",
+                fontsize=st["label_fontsize"], color=st["text_color"]
+            )
+            ax.set_title(
+                f"ICESat-2 Elevation Profile  —  {len(lats):,} points  |  "
+                f"{dist_m[-1] / 1000:.2f} km",
+                fontsize=st["title_fontsize"], fontweight="bold",
+                color=st["title_color"], pad=8
+            )
 
-        self.canvas.draw()
+            # Overlay lines
+            for idx_ov, of in enumerate(overlay_fields):
+                color = ov_palette[idx_ov % len(ov_palette)]
+                vals = ov_data[of]
+                valid_ov = ~np.isnan(vals)
+
+                tax = ax.twinx()
+                self._style_twin_ax(tax, color, st)
+
+                if idx_ov > 0:
+                    tax.spines["right"].set_position(("axes", 1.0 + idx_ov * 0.10))
+                    tax.spines["right"].set_visible(True)
+
+                tax.plot(dist_m[valid_ov], vals[valid_ov],
+                         color=color, linewidth=1.4, alpha=0.85, zorder=6)
+                tax.set_ylabel(of, fontsize=st["tick_labelsize"] + 1,
+                               color=color, labelpad=4)
+                tax.tick_params(axis="y", colors=color,
+                                labelsize=st["tick_labelsize"])
+
+                lh = mlines.Line2D([], [], color=color, linewidth=1.8)
+                legend_handles.append(lh)
+                legend_labels.append(of)
+
+            # Legend
+            if self.show_legend_cb.isChecked() and legend_handles:
+                if self.show_water_cb.isChecked() and water_f and waters.any():
+                    rh = mpatches.Patch(
+                        facecolor=st["water_fill"],
+                        alpha=min(st["water_fill_alpha"] * 2, 1.0),
+                        edgecolor="none"
+                    )
+                    legend_handles.append(rh)
+                    legend_labels.append("water region")
+
+                leg = ax.legend(
+                    legend_handles, legend_labels,
+                    title="Legend", title_fontsize=st["tick_labelsize"],
+                    fontsize=st["tick_labelsize"],
+                    loc="upper left",
+                    framealpha=st["legend_framealpha"],
+                    facecolor=st["legend_facecolor"],
+                    edgecolor=st["legend_edgecolor"],
+                    labelcolor=st["legend_labelcolor"]
+                )
+                leg.get_title().set_color(st["text_color"])
+
+            self.canvas.draw()
+
         self._status(
-            f"✔  {len(lats):,} points  |  {dist_m[-1]/1000:.2f} km  |  "
+            f"✔  {len(lats):,} points  |  {dist_m[-1] / 1000:.2f} km  |  "
             f"{int(waters.sum())} water points"
         )
 
-    # Styling
-
-    def _style_ax(self, ax):
-        ax.set_facecolor("#1a1a2e")
-        self.figure.patch.set_facecolor("#12121f")
+    # Axis styling
+    def _style_ax(self, ax, st):
+        ax.set_facecolor(st["ax_facecolor"])
         for spine in ("bottom", "left"):
-            ax.spines[spine].set_color("#555")
+            ax.spines[spine].set_color(st["spine_color"])
         for spine in ("top", "right"):
             ax.spines[spine].set_visible(False)
-        ax.tick_params(colors="#cccccc", labelsize=8)
-        ax.grid(True, linestyle="--", alpha=0.35, linewidth=0.5, zorder=0)
+        ax.tick_params(colors=st["text_color"], labelsize=st["tick_labelsize"])
+        ax.grid(
+            st["grid_alpha"] > 0,
+            linestyle=st["grid_linestyle"],
+            color=st["grid_color"],
+            alpha=st["grid_alpha"],
+            linewidth=0.5, zorder=0
+        )
 
-    def _style_twin_ax(self, tax, color):
+    def _style_twin_ax(self, tax, color, st):
         tax.set_facecolor("none")
         for sp in ("top", "left", "bottom"):
             tax.spines[sp].set_visible(False)
         tax.spines["right"].set_color(color)
-        tax.tick_params(axis="y", colors=color, labelsize=8)
+        tax.tick_params(axis="y", colors=color, labelsize=st["tick_labelsize"])
 
     def _status(self, msg, error=False):
         self.status_lbl.setText(msg)
