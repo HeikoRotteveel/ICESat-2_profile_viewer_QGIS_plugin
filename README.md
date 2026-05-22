@@ -1,6 +1,6 @@
 # ICESat-2 Profile Viewer (QGIS Plugin)
 
-For my master thesis I needed a QGIS plugin for visualizing ICESat-2 point data. This plugin can plot a selection of the data as an along-track elevation profile.It generates an interactive cross-section plot where the points are colored based on their confidence. There is also the possibility to add optional overlay variables, and section highlighting (in this case water body highlighting).
+My master thesis required me to visualize vast amounts of ICESat-2 photon data. This QGIS plugin was created precislely to plot a selection of the data as an along-track elevation profile. It generates an interactive cross-section plot where the points are colored based on their confidence. There is also the possibility to add optional overlay variables, and section highlighting (in this case water body highlighting) and to create your own plot styles.
 
 ![Plugin screenshot.png](figures%2FPlugin%20screenshot.png)
 
@@ -15,7 +15,7 @@ For my master thesis I needed a QGIS plugin for visualizing ICESat-2 point data.
 
 ---
 ## Data preprocessing
-This plugin does not automatically work on the HDF5 files provided by NASA. The data needs to be processed so that they can be loaded as vector layers in QGIS. The precise format does not matter, so the plugin works on file formats lke GeoParquet, GeoPackage, FlatGeoBuff, etc. Any numerical attributes can be added to the points and can be plotted. The minumum requirement is that the file contains points with a Latitude, Longitude and Height.  
+This plugin does not automatically work on the HDF5 files provided by NASA. The data needs to be processed for the granules to be loadable as vector layers in QGIS. The precise format does not matter; the plugin works on file formats lke GeoParquet, GeoPackage, FlatGeoBuff, etc. Any numerical attributes can be added to the points and can be plotted. The minumum requirement is that the file contains points with a Latitude, Longitude and Height.  
 
 ---
 ## Usage
