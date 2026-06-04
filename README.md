@@ -1,6 +1,8 @@
 # ICESat-2 Profile Viewer (QGIS Plugin)
 
-My master thesis required me to visualize vast amounts of ICESat-2 photon data. This QGIS plugin was created precislely to plot a selection of the data as an along-track elevation profile. It generates an interactive cross-section plot where the points are colored based on their confidence. There is also the possibility to add optional overlay variables, and section highlighting (in this case water body highlighting) and to create your own plot styles.
+My master thesis required me to visualize vast amounts of ICESat-2 photon data. This QGIS plugin was created to plot a selection of the data as an along-track elevation profile. It generates an interactive cross-section plot where the points are colored based on their confidence. There is also the possibility to add optional overlay variables, and section highlighting (in this case water body highlighting) and to create your own plot styles.
+
+The ICESat-2 data can be processed and the machine learning model can be created using [ICESat-2 automatic water detection](https://github.com/HeikoRotteveel/ICESat-2_automatic_water_detection.git) library.
 
 ![result.png](figures%2Fresult.png)
 
