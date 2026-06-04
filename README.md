@@ -2,7 +2,7 @@
 
 For my master thesis I needed a QGIS plugin for visualizing ICESat-2 point data. This plugin can plot a selection of the data as an along-track elevation profile.It generates an interactive cross-section plot where the points are colored based on their confidence. There is also the possibility to add optional overlay variables, and section highlighting (in this case water body highlighting).
 
-![Plugin screenshot.png](figures%2FPlugin%20screenshot.png)
+![result.png](figures%2Fresult.png)
 
 ---
 ## Install from ZIP
@@ -16,6 +16,8 @@ For my master thesis I needed a QGIS plugin for visualizing ICESat-2 point data.
 ---
 ## Data preprocessing
 This plugin does not automatically work on the HDF5 files provided by NASA. The data needs to be processed so that they can be loaded as vector layers in QGIS. The precise format does not matter, so the plugin works on file formats lke GeoParquet, GeoPackage, FlatGeoBuff, etc. Any numerical attributes can be added to the points and can be plotted. The minumum requirement is that the file contains points with a Latitude, Longitude and Height.  
+
+For this, the `data_processing` steps of https://github.com/HeikoRotteveel/ICESAT-2_automatic_water_detection can be followed. 
 
 ---
 ## Usage
@@ -34,9 +36,6 @@ This plugin does not automatically work on the HDF5 files provided by NASA. The 
 
 ---
 ## Output
-
-![result.png](figures%2Fresult.png)
-
 The plugin generates a profile plot with:
 
 * **X-axis**: Along-track distance (meters)
